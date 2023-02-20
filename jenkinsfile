@@ -1,0 +1,59 @@
+pipeline {
+    agent {
+        label 'master'
+    }
+    stages {
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    def app = docker.build("python_app:v1.0", ".")
+                }
+            }
+        }
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    kubernetes.withCluster('k8s-cluster-name') {
+                        def deployment = new groovy.json.JsonSlurper().parse('''
+                        apiVersion: apps/v1
+                        kind: Deployment
+                        metadata:
+                          name: python-app-deployment
+                        spec:
+                          replicas: 1
+                          selector:
+                            matchLabels:
+                              app: python-app
+                          template:
+                            metadata:
+                              labels:
+                                app: python-app
+                            spec:
+                              containers:
+                              - name: python-app
+                                image: python_app:v1.0
+                                ports:
+                                - containerPort: 5000
+                        ''')
+                        def service = new groovy.json.JsonSlurper().parse('''
+                        apiVersion: v1
+                        kind: Service
+                        metadata:
+                          name: python-app-service
+                        spec:
+                          type: ClusterIP
+                          selector:
+                            app: python-app
+                          ports:
+                          - name: https
+                            port: 443
+                            targetPort: 5000
+                        ''')
+                        kubernetes.create(deployment)
+                        kubernetes.create(service)
+                    }
+                }
+            }
+        }
+    }
+}
